@@ -1,0 +1,73 @@
+/* src/AudioUpload.css */
+
+body {
+    background-color: #eef2f5; /* Light background for contrast */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh; /* Full viewport height */
+    margin: 0;
+  }
+  
+  .upload-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #ffffff 0%, #f0f4f8 100%); /* Gradient background */
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); /* Enhanced shadow */
+    padding: 30px; /* More padding for a spacious feel */
+    margin: 20px;
+    width: 350px; /* Slightly wider box */
+    transition: transform 0.3s; /* Transition for hover effect */
+  }
+  
+  .upload-container:hover {
+    transform: scale(1.02); /* Slightly scale up on hover */
+  }
+  
+  .upload-title {
+    font-size: 28px; /* Larger font size for the title */
+    color: #333;
+    margin-bottom: 20px; /* Increased spacing */
+    text-align: center; /* Center text */
+  }
+  
+  .file-input {
+    border: 2px dashed #007bff;
+    border-radius: 8px; /* Rounded corners */
+    padding: 15px; /* More padding for better usability */
+    width: 100%;
+    margin-bottom: 20px; /* Increased spacing */
+    cursor: pointer;
+    transition: border-color 0.3s; /* Smooth border color transition */
+  }
+  
+  .file-input:hover {
+    border-color: #0056b3; /* Darker border on hover */
+  }
+  
+  .upload-button {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 8px; /* Rounded corners */
+    padding: 12px 25px; /* Slightly larger button */
+    cursor: pointer;
+    font-size: 18px; /* Larger font size */
+    transition: background-color 0.3s, transform 0.2s; /* Transition for button hover effect */
+  }
+  
+  .upload-button:hover {
+    background-color: #0056b3; /* Darker button on hover */
+    transform: translateY(-2px); /* Slightly lift button on hover */
+  }
+  
+  .upload-message {
+    margin-top: 15px;
+    font-size: 16px;
+    color: #333;
+    text-align: center; /* Center text for message */
+  }
+  

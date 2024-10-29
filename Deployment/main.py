@@ -1,24 +1,38 @@
 from io import BytesIO
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from pydub import AudioSegment
+from starlette.responses import StreamingResponse
 
 app = FastAPI()
 
-def noise_Reduction():
-    return "noise reduced"
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.put("/process-audio/", response_class=StreamingResponse)
+async def process_audio(file: UploadFile):
+    try:
+        audio = AudioSegment.from_file(file.file)
+        
+        processed_audio = audio + 5
+        
+        buffer = BytesIO()
+        processed_audio.export(buffer, format="wav")
+        buffer.seek(0)
+
+        return StreamingResponse(buffer, media_type="audio/wav", headers={"Content-Disposition": "attachment; filename=processed_audio.wav"})
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/")
 async def root():
     return {"message": "Hello, Professor!"}
 
-@app.post("/noise_reduction")
-async def upload_audio(file: UploadFile = File(...)):
-    if not file.content_type.startswith("audio/"):
-        raise HTTPException(status_code=400, detail="Invalid audio file.")
-    
-    audio_data = await file.read()
-    audio_stream = BytesIO(audio_data)
-    
-    return StreamingResponse(audio_stream, media_type=file.content_type)
-    
