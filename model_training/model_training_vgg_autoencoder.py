@@ -17,18 +17,23 @@ import os
 
 # define data directory
 data_dir = './data/train/LibriSpeech/dev-clean/84/121123/'
-all_files = os.listdir(data_dir)
+higher_data_dir = './data/train/LibriSpeech/dev-clean/'
+all_files = []
 
 # load audio files into memory
-flac_files = [f for f in all_files if f.endswith('.flac')]
-flac_files.sort()
+for dir1 in os.listdir(higher_data_dir):
+    for dir2 in os.listdir(higher_data_dir + dir1):
+        for f in os.listdir(higher_data_dir + dir1 + '/' + dir2):
+            file_path = higher_data_dir + dir1 + '/' + dir2 + '/' + f
+            if f.endswith('.flac'):
+                all_files.append(file_path)
 
-print(flac_files)
+print(len(all_files))
 
 # Display a sample audio file
 from IPython.display import Audio
 
-display(Audio(data_dir + flac_files[0]))
+display(Audio(all_files[0]))
 
 """# START AYUSH'S CODE"""
 
@@ -101,7 +106,7 @@ def add_noise(audio: np.ndarray, noise_factor: float = 0.02) -> np.ndarray:
     return noisy_audio
 
 # Load clean audio
-clean_audio, sr = load_audio(data_dir + flac_files[0])
+clean_audio, sr = load_audio(all_files[0])
 
 # Add noise to the clean audio
 noisy_audio = add_noise(clean_audio)
@@ -117,7 +122,7 @@ clean_spectrogram.shape
 noisy_spectrogram = extract_spectrogram(noisy_audio, sr)
 
 # display clean audio
-display(Audio(data_dir + flac_files[0]))
+display(Audio(all_files[0]))
 
 # display noisy audio
 display(Audio('noisy_audio.flac'))
@@ -154,23 +159,11 @@ samplerate = 16000
 window_duration = 1.02
 window_samples = int(samplerate * window_duration)
 
-clean_audios = []
-clean_windows = []
 clean_spectrograms = []
-noisy_audios = []
-noisy_windows = []
 noisy_spectrograms = []
 
-for flac_file in flac_files:
-    # Load clean audios
-    clean_audio, sr = load_audio(data_dir + flac_file)
-    clean_audios.append((clean_audio, sr))
-
-    # Add noise to the clean audios
-    noisy_audio = add_noise(clean_audio)
-    noisy_audios.append((noisy_audio, sr))
-
-    # for each window in the audio file, get and store the associated spectrogram
+# for each window in each audio file, get and store the associated spectrogram
+for flac_file in all_files:
     for start in range(0, len(clean_audio), window_samples):
         end = start + window_samples
 
@@ -180,34 +173,47 @@ for flac_file in flac_files:
         if len(clean_window) < window_samples:
             continue
 
-        clean_windows.append(clean_window)
-        noisy_windows.append(noisy_window)
-
         clean_spectrogram = extract_spectrogram(clean_window, sr)
         clean_spectrograms.append(clean_spectrogram)
 
         noisy_spectrogram = extract_spectrogram(noisy_window, sr)
         noisy_spectrograms.append(noisy_spectrogram)
 
-# normalization so that each value in the spectrogram is within range of 0 and 1
-min_val = np.min(clean_spectrograms)
-max_val = np.max(clean_spectrograms)
+len(clean_spectrograms)
 
-scaled_clean_spectrograms = (clean_spectrograms - min_val) / (max_val - min_val)
-scaled_noisy_spectrograms = (noisy_spectrograms - min_val) / (max_val - min_val)
-
+# turn list into numpy array
 # since the model is expecting 3 channels, repeat the value 3 times
-np_clean_spectrograms = np.array(scaled_clean_spectrograms)
-rgb_clean_spectrograms = np.repeat(np_clean_spectrograms[..., np.newaxis], 3, axis=-1)
-np_noisy_spectrograms = np.array(scaled_noisy_spectrograms)
-rgb_noisy_spectrograms = np.repeat(np_noisy_spectrograms[..., np.newaxis], 3, axis=-1)
+rgb_clean_spectrograms = np.repeat(np.array(clean_spectrograms)[..., np.newaxis], 3, axis=-1)
+rgb_noisy_spectrograms = np.repeat(np.array(noisy_spectrograms)[..., np.newaxis], 3, axis=-1)
 
 print(rgb_clean_spectrograms.shape)
 print(rgb_noisy_spectrograms.shape)
 
-plot_spectrogram(clean_spectrograms[1], 'Clean Audio Spectrogram')
-plot_spectrogram(noisy_spectrograms[1], 'Noisy Audio Spectrogram')
+# split train and test data
+from sklearn.model_selection import train_test_split
 
+X_train, X_test, y_train, y_test = train_test_split(rgb_noisy_spectrograms, rgb_clean_spectrograms, test_size=0.1, random_state=42)
+
+X_train.shape
+
+# normalization so that each value in the spectrograms is within range of 0 and 1
+min_val = -80
+max_val = 0
+
+scaled_X_train = (X_train - min_val) / (max_val - min_val)
+scaled_X_test = (X_test - min_val) / (max_val - min_val)
+scaled_y_train = (y_train - min_val) / (max_val - min_val)
+scaled_y_test = (y_test - min_val) / (max_val - min_val)
+
+print(np.min(scaled_X_train))
+print(np.max(scaled_y_train))
+print(np.min(scaled_X_test))
+print(np.max(scaled_y_test))
+
+plot_spectrogram(scaled_X_train[0], 'Noisy Audio Spectrogram')
+plot_spectrogram(scaled_y_train[0], 'Clean Audio Spectrogram')
+
+# function to turn the spectrogram back into the audio signal
 def inverse_spectrogram(spectrogram):
     mel_spectrogram = librosa.db_to_power(spectrogram)
     linear_spectrogram = librosa.feature.inverse.mel_to_stft(mel_spectrogram, sr=16000, n_fft=2048)
@@ -216,19 +222,12 @@ def inverse_spectrogram(spectrogram):
     return audio_signal
 
 # turn the first clean_spectrogram back into audio
-inversed = inverse_spectrogram(clean_spectrograms[1])
+inversed = inverse_spectrogram(clean_spectrograms[0])
 
 # play the audio
-sf.write('inversed.flac', inversed, 16000, format='FLAC')
-
 display(Audio(inversed, rate=16000))
 
-inversed2 = inverse_spectrogram(clean_spectrograms[2])
-sf.write('inversed2.flac', inversed2, 16000, format='FLAC')
-display(Audio(inversed2, rate=16000))
-
 from tensorflow import keras
-
 from keras.applications import VGG16, ResNet50
 
 # Load a pretrained model and return the model.
@@ -307,16 +306,20 @@ def save_model(loc_model: keras.Model, file_path: str):
 
 save_model(full_model, "updated_model.keras")
 
-full_model.fit(rgb_noisy_spectrograms, rgb_clean_spectrograms, batch_size=64, epochs=10)
+full_model.fit(scaled_X_train, scaled_y_train, batch_size=64, epochs=50)
 
-predictions = full_model.predict(rgb_noisy_spectrograms)
+save_model(full_model, "trained_model.keras")
+
+predictions = full_model.predict(scaled_X_test)
 
 unscaled_predictions = predictions * (max_val - min_val) + min_val
 
-test_inversed = inverse_spectrogram(np.squeeze(unscaled_predictions[2]))
+test_inversed = inverse_spectrogram(np.squeeze(unscaled_predictions[0]))
 
-plot_spectrogram(clean_spectrograms[2], 'Noisy Audio Spectrogram')
+plot_spectrogram(scaled_X_test[1], 'Noisy Audio Spectrogram')
 
-plot_spectrogram(np.squeeze(unscaled_predictions[0]), 'Clean Audio Spectrogram')
+plot_spectrogram(scaled_y_test[1], 'True Clean Spectrogram')
+
+plot_spectrogram(np.squeeze(unscaled_predictions[1]), 'Clean Audio Spectrogram')
 
 display(Audio(test_inversed, rate=16000))
