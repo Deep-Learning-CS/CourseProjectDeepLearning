@@ -4,6 +4,9 @@ import soundfile as sf
 import tensorflow as tf
 from skimage.metrics import structural_similarity as ssim
 import os
+from pesq import pesq  # PESQ calculation
+from pypesq import pesq as pypesq  # PESQ calculation with pypesq
+from scipy.signal import correlate
 
 class Evaluation:
     def __init__(self, model_weights_path: str, noisy_audio_path: str, clean_audio_path: str):
@@ -36,11 +39,17 @@ class Evaluation:
         psnr_value = self.compute_PSNR(clean_audio, predicted_audio)
         ssim_value = self.compute_SSIM(clean_audio, predicted_audio)
         mse_value = self.compute_MSE(clean_audio, predicted_audio)
+        snr_value = self.compute_SNR(clean_audio, predicted_audio)
+        pesq_value = self.compute_PESQ(clean_audio, predicted_audio)
+        mcd_value = self.compute_MCD(clean_audio, predicted_audio)
 
         metrics = {
             'PSNR': psnr_value,
             'SSIM': ssim_value,
-            'MSE': mse_value
+            'MSE': mse_value,
+            'SNR': snr_value,
+            'PESQ': pesq_value,
+            'MCD': mcd_value
         }
         return metrics
 
@@ -61,16 +70,38 @@ class Evaluation:
     def compute_MSE(self, clean_frames: np.ndarray, noisy_frames: np.ndarray) -> float:
         return np.mean((clean_frames - noisy_frames) ** 2)
 
+    def compute_SNR(self, clean_audio: np.ndarray, predicted_audio: np.ndarray) -> float:
+        # Calculate the Signal-to-Noise Ratio (SNR)
+        noise = clean_audio - predicted_audio
+        signal_power = np.sum(clean_audio ** 2)
+        noise_power = np.sum(noise ** 2)
+        if noise_power == 0:
+            return float('inf')  # Infinite SNR if there's no noise
+        snr = 10 * np.log10(signal_power / noise_power)
+        return snr
+
+    def compute_PESQ(self, clean_audio: np.ndarray, predicted_audio: np.ndarray) -> float:
+        # Use PESQ (requires sampling rate and proper file formats)
+        # PESQ expects a clean reference and a degraded version
+        return pesq(16000, clean_audio, predicted_audio, 'wb')
+
+    def compute_MCD(self, clean_audio: np.ndarray, predicted_audio: np.ndarray) -> float:
+        # Compute Mel Cepstral Distortion (MCD)
+        clean_mfcc = librosa.feature.mfcc(clean_audio, sr=16000)
+        predicted_mfcc = librosa.feature.mfcc(predicted_audio, sr=16000)
+        mcd = np.mean(np.sqrt(np.sum((clean_mfcc - predicted_mfcc) ** 2, axis=0)))
+        return mcd
+
     def generate_report(self, metrics: dict, file_path: str):
         with open(file_path, 'w') as f:
             for metric, value in metrics.items():
                 f.write(f"{metric}: {value:.4f}\n")
     
     def extract_spectrogram(self, audio: np.ndarray) -> np.ndarray:
-    # Convert the audio waveform to a Mel spectrogram
-    spectrogram = librosa.feature.melspectrogram(y=audio, sr=16000, n_fft=2048, hop_length=512)
-    spectrogram_db = librosa.power_to_db(spectrogram, ref=np.max)
-    return spectrogram_db
+        # Convert the audio waveform to a Mel spectrogram
+        spectrogram = librosa.feature.melspectrogram(y=audio, sr=16000, n_fft=2048, hop_length=512)
+        spectrogram_db = librosa.power_to_db(spectrogram, ref=np.max)
+        return spectrogram_db
 
     def inverse_spectrogram(self, spectrogram: np.ndarray) -> np.ndarray:
         mel_spectrogram = librosa.db_to_power(spectrogram)
@@ -79,27 +110,7 @@ class Evaluation:
         return audio_signal
 
 ###########################
-# Copied from Training
-
-def extract_spectrogram(audio: np.ndarray, sr: int = 16000) -> np.ndarray:
-    # Extract Mel-spectrogram using librosa's correct method signature
-    spectrogram = librosa.feature.melspectrogram(y=audio, sr=sr, n_fft=2048, hop_length=512)
-
-    # Convert to decibels (dB scale)
-    spectrogram_db = librosa.power_to_db(spectrogram, ref=np.max)
-    # spectrogram_amp = librosa.db_to_amplitude(spectrogram)
-
-    return spectrogram_db
-
-# function to turn the spectrogram back into the audio signal
-def inverse_spectrogram(spectrogram):
-    mel_spectrogram = librosa.db_to_power(spectrogram)
-    linear_spectrogram = librosa.feature.inverse.mel_to_stft(mel_spectrogram, sr=16000, n_fft=2048)
-    audio_signal = librosa.griffinlim(linear_spectrogram, n_iter=64, hop_length=512, n_fft=2048)
-    audio_signal *= 50
-    return audio_signal
-
-##########################3
+# Main Evaluation
 
 if __name__ == "__main__":
     evaluator = Evaluation(
