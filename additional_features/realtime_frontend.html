@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Microphone Audio Capture</title>
+  <style>
+    /* General styles */
+    body {
+      font-family: 'Arial', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f0f4f8;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    .container {
+      text-align: center;
+      background-color: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      width: 80%;
+      max-width: 600px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 12px 24px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    button:hover {
+      background-color: #45a049;
+    }
+
+    button:active {
+      background-color: #3c8c3d;
+    }
+
+    button:disabled {
+      background-color: #dcdcdc;
+      cursor: not-allowed;
+    }
+
+    #audio-visualizer {
+      width: 100%;
+      height: 150px;
+      margin-top: 20px;
+      background-color: #e0e0e0;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>Microphone Audio Capture</h1>
+    <button id="toggle-btn">Start Capture</button>
+    <canvas id="audio-visualizer"></canvas>
+  </div>
+
+  <script>
+    // Get HTML elements
+    const toggleButton = document.getElementById('toggle-btn');
+    const canvas = document.getElementById('audio-visualizer');
+    const ctx = canvas.getContext('2d');
+
+    let audioContext;
+    let analyser;
+    let microphone;
+    let mediaStream;
+    let audioSource;
+    let capturing = false;
+
+    // Function to start capturing audio
+    function startCapture() {
+      // Check if getUserMedia is supported
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+          .then(function(stream) {
+            mediaStream = stream;
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+            // Create an analyser node
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256; // Set the FFT size
+            analyser.smoothingTimeConstant = 0.8;
+
+            // Create a media stream source from the microphone input
+            audioSource = audioContext.createMediaStreamSource(stream);
+
+            // Connect the microphone to the analyser
+            audioSource.connect(analyser);
+
+            // Visualize the audio
+            visualizeAudio();
+
+            // Change the button to "Stop Capture"
+            toggleButton.textContent = 'Stop Capture';
+            capturing = true;
+          })
+          .catch(function(err) {
+            console.error('Error accessing microphone:', err);
+          });
+      } else {
+        alert('getUserMedia is not supported by your browser.');
+      }
+    }
+
+    // Function to stop capturing audio
+    function stopCapture() {
+      if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close();
+        if (mediaStream) {
+          let tracks = mediaStream.getTracks();
+          tracks.forEach(track => track.stop());
+        }
+        // Reset variables
+        audioContext = null;
+        analyser = null;
+        mediaStream = null;
+        audioSource = null;
+
+        // Change the button to "Start Capture"
+        toggleButton.textContent = 'Start Capture';
+        capturing = false;
+      }
+    }
+
+    // Function to visualize audio data
+    function visualizeAudio() {
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      // Clear the canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Visualize the frequency data
+      function draw() {
+        analyser.getByteFrequencyData(dataArray);
+
+        // Draw the bars (frequency bins)
+        ctx.fillStyle = 'rgb(0, 0, 0)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const barWidth = canvas.width / bufferLength;
+        let barHeight;
+        let x = 0;
+
+        for (let i = 0; i < bufferLength; i++) {
+          barHeight = dataArray[i];
+
+          // Draw each frequency bar
+          ctx.fillStyle = 'rgb(' + (barHeight + 100) + ',50,50)';
+          ctx.fillRect(x, canvas.height - barHeight / 2, barWidth, barHeight);
+
+          x += barWidth + 1;
+        }
+
+        requestAnimationFrame(draw);
+      }
+
+      draw();
+    }
+
+    // Toggle between start and stop capture
+    toggleButton.onclick = function() {
+      if (capturing) {
+        stopCapture();
+      } else {
+        startCapture();
+      }
+    };
+  </script>
+
+</body>
+</html>
