@@ -71,3 +71,18 @@ body {
     text-align: center; /* Center text for message */
   }
   
+  .audio {
+    margin-top: 10px;
+  }
+  
+  .download-link {
+    display: inline-block;
+    margin-top: 10px;
+    color: #61dafb;
+    text-decoration: none;
+    font-size: 1rem;
+  }
+  
+  .download-link:hover {
+    text-decoration: underline;
+  }
