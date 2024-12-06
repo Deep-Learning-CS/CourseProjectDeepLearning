@@ -1,3 +1,4 @@
+// AudioUpload.js
 import axios from "axios";
 import React, { useState } from "react";
 import "./AudioUpload.css";
@@ -8,8 +9,9 @@ const AudioUpload = () => {
   const [processedAudioUrl, setProcessedAudioUrl] = useState("");
   const [message, setMessage] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedModel, setSelectedModel] = useState("dns"); // Add model selection state
 
-  const BACKEND_URL = "http://localhost:8000"; // Changed from 0.0.0.1 to localhost
+  const BACKEND_URL = "http://localhost:8000";
 
   const handleFileChange = (event) => {
     const selectedFile = event.target.files[0];
@@ -29,6 +31,10 @@ const AudioUpload = () => {
     }
   };
 
+  const handleModelChange = (event) => {
+    setSelectedModel(event.target.value);
+  };
+
   const handleUpload = async () => {
     if (!file) {
       setMessage("Please select an audio file.");
@@ -41,14 +47,18 @@ const AudioUpload = () => {
     setMessage("Processing audio...");
 
     try {
-      const response = await axios.put(`${BACKEND_URL}/process-audio/`, formData, {
-        responseType: "blob",
-        headers: {
-          'Accept': 'audio/wav',
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 30000, // 30 second timeout
-      });
+      const response = await axios.put(
+        `${BACKEND_URL}/process-audio/?model=${selectedModel}`,
+        formData,
+        {
+          responseType: "blob",
+          headers: {
+            'Accept': 'audio/wav',
+            'Content-Type': 'multipart/form-data',
+          },
+          timeout: 30000,
+        }
+      );
 
       const processedUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'audio/wav' }));
       setProcessedAudioUrl(processedUrl);
@@ -73,6 +83,19 @@ const AudioUpload = () => {
     <div className="upload-container">
       <h2 className="upload-title">Audio Noise Reduction</h2>
       <div className="upload-section">
+        <div className="model-selection">
+          <label htmlFor="model-select">Select Model:</label>
+          <select
+            id="model-select"
+            value={selectedModel}
+            onChange={handleModelChange}
+            className="model-select"
+            disabled={isProcessing}
+          >
+            <option value="dns">DNS Model</option>
+            <option value="luke">Luke Model</option>
+          </select>
+        </div>
         <input
           type="file"
           accept=".wav"
