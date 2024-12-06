@@ -38,104 +38,135 @@ class LukeNoiseReducer:
             logger.info("Luke model loaded successfully")
             logger.info(f"Model input shape: {self.model.input_shape}")
             logger.info(f"Model output shape: {self.model.output_shape}")
+            # Store STFT parameters as class variables for consistency
+            self.nperseg = 256
+            self.noverlap = self.nperseg // 2
+            self.window = signal.windows.hann(self.nperseg)
         except Exception as e:
             logger.error(f"Error loading Luke model: {str(e)}")
             raise
 
     def prepare_spectrogram(self, audio, sr=16000):
         """Convert audio to spectrogram format"""
-        # Ensure proper shape and type
-        if isinstance(audio, torch.Tensor):
-            audio = audio.numpy()
-        
-        if len(audio.shape) > 1:
-            if audio.shape[0] > 1:  # If stereo, convert to mono
-                audio = np.mean(audio, axis=0)
+        try:
+            # Ensure proper shape and type
+            if isinstance(audio, torch.Tensor):
+                audio = audio.numpy()
+            
+            if len(audio.shape) > 1:
+                if audio.shape[0] > 1:  # If stereo, convert to mono
+                    audio = np.mean(audio, axis=0)
+                else:
+                    audio = audio.squeeze()
+                    
+            # Normalize audio
+            audio = audio / (np.max(np.abs(audio)) + 1e-8)
+            
+            # Compute STFT with explicit parameters
+            frequencies, times, Zxx = signal.stft(
+                audio,
+                fs=sr,
+                window=self.window,
+                nperseg=self.nperseg,
+                noverlap=self.noverlap,
+                boundary='zeros'  # Use zeros padding for boundary
+            )
+            
+            # Get magnitude spectrogram
+            spectrogram = np.abs(Zxx)
+            
+            # Store original shapes for later use
+            self.original_freq_len = spectrogram.shape[0]
+            self.original_time_len = spectrogram.shape[1]
+            
+            # Trim or pad to 128 frequency bins
+            if spectrogram.shape[0] > 128:
+                spectrogram = spectrogram[:128, :]
+                Zxx = Zxx[:128, :]
             else:
-                audio = audio.squeeze()
-                
-        # Normalize audio
-        audio = audio / (np.max(np.abs(audio)) + 1e-8)
-        
-        # Calculate spectrogram
-        nperseg = 256
-        noverlap = nperseg // 2
-        
-        # Compute STFT
-        frequencies, times, Zxx = signal.stft(audio, sr, nperseg=nperseg, noverlap=noverlap)
-        
-        # Get magnitude spectrogram
-        spectrogram = np.abs(Zxx)
-        
-        # Ensure we have exactly 128 frequency bins
-        if spectrogram.shape[0] > 128:
-            spectrogram = spectrogram[:128, :]
-        elif spectrogram.shape[0] < 128:
-            pad_size = 128 - spectrogram.shape[0]
-            spectrogram = np.pad(spectrogram, ((0, pad_size), (0, 0)))
-        
-        return spectrogram, Zxx, frequencies, times
+                pad_size = 128 - spectrogram.shape[0]
+                spectrogram = np.pad(spectrogram, ((0, pad_size), (0, 0)))
+                Zxx = np.pad(Zxx, ((0, pad_size), (0, 0)))
+            
+            return spectrogram, Zxx, frequencies, times
+            
+        except Exception as e:
+            logger.error(f"Error in prepare_spectrogram: {str(e)}")
+            raise
 
     def process_audio(self, audio, sample_rate):
         try:
+            # Handle input audio format
+            if isinstance(audio, torch.Tensor):
+                if len(audio.shape) == 3:
+                    audio = audio.squeeze(0)
+                if audio.shape[0] > 1:
+                    audio = torch.mean(audio, dim=0)
+                audio = audio.numpy()
+            
+            # Resample if necessary
+            if sample_rate != 16000:
+                num_samples = int(len(audio) * 16000 / sample_rate)
+                audio = signal.resample(audio, num_samples)
+                sample_rate = 16000
+            
             # Prepare spectrogram
             spectrogram, Zxx, frequencies, times = self.prepare_spectrogram(audio, sample_rate)
             
-            # Get the number of time frames
+            # Process in chunks
             num_frames = spectrogram.shape[1]
-            
-            # Process in chunks of 32 time frames
             processed_frames = []
             
             for i in range(0, num_frames, 32):
-                # Extract chunk
                 chunk = spectrogram[:, i:i+32]
-                
-                # Pad if necessary
                 if chunk.shape[1] < 32:
                     pad_size = 32 - chunk.shape[1]
                     chunk = np.pad(chunk, ((0, 0), (0, pad_size)))
                 
-                # Reshape to match expected input shape (None, 128, 32, 1)
                 model_input = chunk.reshape(1, 128, 32, 1)
-                
-                # Process through model
                 batch_output = self.model.predict(model_input, verbose=0)
                 
-                # Only keep valid frames
                 valid_frames = min(32, num_frames - i)
                 if valid_frames < 32:
                     batch_output = batch_output[:, :, :valid_frames, :]
                 
                 processed_frames.append(batch_output.squeeze())
             
-            # Concatenate processed frames along time axis
+            # Combine processed frames
             processed_spectrogram = np.concatenate(processed_frames, axis=1)
             
-            # Reconstruct audio using phase information
-            phase = np.angle(Zxx)
-            reconstructed_complex = processed_spectrogram * np.exp(1j * phase[:128, :processed_spectrogram.shape[1]])
+            # Match dimensions with original
+            processed_spectrogram = processed_spectrogram[:, :self.original_time_len]
             
-            # Add zero padding back to match original frequency dimensions if needed
-            if Zxx.shape[0] > 128:
-                pad_size = Zxx.shape[0] - 128
+            # Reconstruct with original phase
+            phase = np.angle(Zxx[:128, :])
+            reconstructed_complex = processed_spectrogram * np.exp(1j * phase)
+            
+            # Add back original frequency dimensions if needed
+            if self.original_freq_len > 128:
+                pad_size = self.original_freq_len - 128
                 reconstructed_complex = np.pad(reconstructed_complex, ((0, pad_size), (0, 0)))
             
-            # Inverse STFT
+            # Inverse STFT with same parameters
             _, reconstructed_audio = signal.istft(
-                reconstructed_complex, 
-                sample_rate,
-                nperseg=256,
-                noverlap=256//2
+                reconstructed_complex,
+                fs=sample_rate,
+                window=self.window,
+                nperseg=self.nperseg,
+                noverlap=self.noverlap,
+                boundary='zeros'
             )
             
-            # Convert back to torch tensor
+            # Convert back to original sample rate if needed
+            if sample_rate != 16000:
+                num_samples = int(len(reconstructed_audio) * sample_rate / 16000)
+                reconstructed_audio = signal.resample(reconstructed_audio, num_samples)
+            
             return torch.from_numpy(reconstructed_audio).float()
             
         except Exception as e:
             logger.error(f"Error in process_audio: {str(e)}")
             raise
-            
 
 class NoiseReducer(nn.Module):
     def __init__(self):
@@ -153,42 +184,54 @@ class NoiseReducer(nn.Module):
 
     @torch.no_grad()
     def forward(self, audio, sample_rate):
-        if sample_rate != 16000:
-            resampler = torchaudio.transforms.Resample(
-                orig_freq=sample_rate, 
-                new_freq=16000
-            ).to(self.device)
-            audio = resampler(audio)
-        
-        if audio.shape[0] > 1:
-            audio = torch.mean(audio, dim=0, keepdim=True)
-        
-        if len(audio.shape) == 2:
-            audio = audio.unsqueeze(0)
-        
-        audio = audio / torch.max(torch.abs(audio))
-        
-        chunk_size = 16000 * 30
-        if audio.shape[2] > chunk_size:
-            chunks = torch.split(audio, chunk_size, dim=2)
-            processed_chunks = []
-            for chunk in chunks:
-                processed_chunk = self.model(chunk.to(self.device))
-                processed_chunks.append(processed_chunk.cpu())
-            processed_audio = torch.cat(processed_chunks, dim=2)
-        else:
-            processed_audio = self.model(audio.to(self.device)).cpu()
-        
-        processed_audio = processed_audio.squeeze(0)
-        
-        if sample_rate != 16000:
-            resampler = torchaudio.transforms.Resample(
-                orig_freq=16000,
-                new_freq=sample_rate
-            )
-            processed_audio = resampler(processed_audio)
-        
-        return processed_audio
+        try:
+            # Ensure audio is in the correct format (batch, channels, samples)
+            if len(audio.shape) == 1:  # If 1D tensor
+                audio = audio.unsqueeze(0).unsqueeze(0)  # Add batch and channel dimensions
+            elif len(audio.shape) == 2:  # If 2D tensor (channels, samples)
+                audio = audio.unsqueeze(0)  # Add batch dimension
+            
+            # Resample if needed
+            if sample_rate != 16000:
+                resampler = torchaudio.transforms.Resample(
+                    orig_freq=sample_rate, 
+                    new_freq=16000
+                ).to(self.device)
+                audio = resampler(audio)
+            
+            # Convert stereo to mono if needed
+            if audio.shape[1] > 1:
+                audio = torch.mean(audio, dim=1, keepdim=True)
+            
+            # Normalize
+            audio = audio / (torch.max(torch.abs(audio)) + 1e-8)
+            
+            # Process in chunks if audio is too long
+            chunk_size = 16000 * 30  # 30 seconds chunks
+            if audio.shape[2] > chunk_size:
+                chunks = torch.split(audio, chunk_size, dim=2)
+                processed_chunks = []
+                for chunk in chunks:
+                    processed_chunk = self.model(chunk.to(self.device))
+                    processed_chunks.append(processed_chunk.cpu())
+                processed_audio = torch.cat(processed_chunks, dim=2)
+            else:
+                processed_audio = self.model(audio.to(self.device)).cpu()
+            
+            # Resample back to original rate if needed
+            if sample_rate != 16000:
+                resampler = torchaudio.transforms.Resample(
+                    orig_freq=16000,
+                    new_freq=sample_rate
+                )
+                processed_audio = resampler(processed_audio)
+            
+            # Return as 2D tensor (channels, samples)
+            return processed_audio.squeeze(0)
+            
+        except Exception as e:
+            logger.error(f"Error in DNS forward pass: {str(e)}")
+            raise
 
 # Initialize models
 try:
@@ -241,12 +284,16 @@ async def process_audio(
         else:  # dns
             enhanced_audio = dns_reducer(audio_tensor, sample_rate)
         
+        # Ensure output is 2D (channels, samples) for saving
+        if len(enhanced_audio.shape) == 1:
+            enhanced_audio = enhanced_audio.unsqueeze(0)
+        
         # Normalize output
-        enhanced_audio = enhanced_audio * 0.95 / torch.max(torch.abs(enhanced_audio))
+        enhanced_audio = enhanced_audio * 0.95 / (torch.max(torch.abs(enhanced_audio)) + 1e-8)
         
         # Save to buffer
         buffer = BytesIO()
-        torchaudio.save(buffer, enhanced_audio.unsqueeze(0), sample_rate, format="wav")
+        torchaudio.save(buffer, enhanced_audio, sample_rate, format="wav")
         buffer.seek(0)
         
         return StreamingResponse(
@@ -281,4 +328,3 @@ async def status() -> Dict[str, str]:
         "available_models": available_models,
         "device": device
     }
-
