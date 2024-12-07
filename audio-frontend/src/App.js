@@ -14,7 +14,8 @@ const AudioUpload = () => {
 
   const handleFileChange = (event) => {
     const selectedFile = event.target.files[0];
-    if (selectedFile && !selectedFile.name.toLowerCase().endsWith('.wav')) {
+    if (selectedFile && !(selectedFile.name.toLowerCase().endsWith('.wav')
+        || selectedFile.name.toLowerCase().endsWith('.flac'))) {
       setMessage("Please select a WAV file.");
       setFile(null);
       setUploadedAudioUrl("");
@@ -46,20 +47,23 @@ const AudioUpload = () => {
     setMessage("Processing audio...");
 
     try {
+      const isWav = file.name.toLowerCase().endsWith('.wav')
+      const mimetype = isWav ? 'audio/wav' : 'audio/flac'
+
       const response = await axios.put(
         `${BACKEND_URL}/process-audio/?model=${selectedModel}`,
         formData,
         {
           responseType: "blob",
           headers: {
-            'Accept': 'audio/wav',
+            'Accept': mimetype,
             'Content-Type': 'multipart/form-data',
           },
           timeout: 30000,
         }
       );
 
-      const processedUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'audio/wav' }));
+      const processedUrl = window.URL.createObjectURL(new Blob([response.data], { type: mimetype }));
       setProcessedAudioUrl(processedUrl);
       setMessage("Audio processed successfully!");
     } catch (error) {
@@ -98,7 +102,7 @@ const AudioUpload = () => {
         </div>
         <input
           type="file"
-          accept=".wav"
+          accept=".wav,.flac"
           onChange={handleFileChange}
           className="file-input"
           disabled={isProcessing}
