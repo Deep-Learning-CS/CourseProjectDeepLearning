@@ -1,4 +1,3 @@
-// AudioUpload.js
 import axios from "axios";
 import React, { useState } from "react";
 import "./AudioUpload.css";
@@ -9,9 +8,9 @@ const AudioUpload = () => {
   const [processedAudioUrl, setProcessedAudioUrl] = useState("");
   const [message, setMessage] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("dns"); // Add model selection state
+  const [selectedModel, setSelectedModel] = useState("dns");
 
-  const BACKEND_URL = "http://localhost:8000";
+  const BACKEND_URL = "http://localhost:8081";
 
   const handleFileChange = (event) => {
     const selectedFile = event.target.files[0];
@@ -94,6 +93,7 @@ const AudioUpload = () => {
           >
             <option value="dns">DNS Model</option>
             <option value="luke">Luke Model</option>
+            <option value="segan">SEGAN Model</option>
           </select>
         </div>
         <input

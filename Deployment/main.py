@@ -1,16 +1,18 @@
+import logging
 from io import BytesIO
-import torch
-import torchaudio
-import torch.nn as nn
+from typing import Dict, Literal, Optional
+
+import numpy as np
 import tensorflow as tf
-from fastapi import FastAPI, HTTPException, UploadFile, File, Query
+import torch
+import torch.nn as nn
+import torchaudio
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.responses import StreamingResponse
-from typing import Dict, Optional, Literal
-import numpy as np
-import logging
 from scipy import signal
+from segan import PretrainedSeganNoiseReducer
+from starlette.responses import StreamingResponse
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -233,17 +235,36 @@ class NoiseReducer(nn.Module):
             logger.error(f"Error in DNS forward pass: {str(e)}")
             raise
 
-# Initialize models
+# Initialize models individually for better error handling
+dns_reducer = None
+luke_reducer = None
+segan_reducer = None
+
 try:
+    logger.info("Starting DNS model initialization...")
     dns_reducer = NoiseReducer()
-    luke_reducer = LukeNoiseReducer()
-    models_status = "operational"
-    logger.info("Both models initialized successfully")
+    logger.info("DNS model initialized successfully")
 except Exception as e:
-    logger.error(f"Error during model initialization: {str(e)}")
-    models_status = "partial" if (dns_reducer is not None or luke_reducer is not None) else "failed"
-    dns_reducer = None
-    luke_reducer = None
+    logger.error(f"Error initializing DNS model: {str(e)}")
+
+try:
+    luke_reducer = LukeNoiseReducer()
+    logger.info("Luke model initialized successfully")
+except Exception as e:
+    logger.error(f"Error initializing Luke model: {str(e)}")
+
+try:
+    segan_reducer = PretrainedSeganNoiseReducer()
+    logger.info("SEGAN model initialized successfully")
+except Exception as e:
+    logger.error(f"Error initializing SEGAN model: {str(e)}")
+
+# Determine overall status after all initializations
+models_status = "operational" if all([dns_reducer, luke_reducer, segan_reducer]) else \
+                "partial" if any([dns_reducer, luke_reducer, segan_reducer]) else \
+                "failed"
+
+logger.info(f"Models initialization completed. Status: {models_status}")
 
 @app.put(
     "/process-audio/",
@@ -252,9 +273,9 @@ except Exception as e:
 )
 async def process_audio(
     file: UploadFile = File(..., description="Audio file to process (WAV or FLAC format)"),
-    model: Literal["dns", "luke"] = Query(
+    model: Literal["dns", "luke", "segan"] = Query(
         default="dns",
-        description="Select the model to use for processing"
+        description="Select the model to use for processing (dns, luke, or segan)"
     )
 ) -> StreamingResponse:
     if model == "dns" and dns_reducer is None:
@@ -266,6 +287,11 @@ async def process_audio(
         raise HTTPException(
             status_code=503,
             detail="Luke model not available"
+        )
+    if model == "segan" and segan_reducer is None:
+        raise HTTPException(
+            status_code=503,
+            detail="SEGAN model not available"
         )
 
     if not (file.filename.endswith('.wav') or file.filename.endswith('.flac')):
@@ -281,6 +307,8 @@ async def process_audio(
         # Process audio with selected model
         if model == "luke":
             enhanced_audio = luke_reducer.process_audio(audio_tensor, sample_rate)
+        elif model == "segan":
+            enhanced_audio = segan_reducer.process_audio(audio_tensor, sample_rate)
         else:  # dns
             enhanced_audio = dns_reducer(audio_tensor, sample_rate)
         
@@ -320,6 +348,8 @@ async def status() -> Dict[str, str]:
         available_models.append("DNS48")
     if luke_reducer is not None:
         available_models.append("Luke")
+    if segan_reducer is not None:
+        available_models.append("SEGAN")
     
     device = str(next(dns_reducer.parameters()).device) if dns_reducer is not None else "none"
     
