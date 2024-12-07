@@ -7,6 +7,7 @@ import tensorflow as tf
 import torch
 import torch.nn as nn
 import torchaudio
+import librosa
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -32,11 +33,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Function to perform SSIM loss -> needed for Luke's model
+@tf.keras.utils.register_keras_serializable()
+def ssim_loss(y_true, y_pred):
+  """
+  Compute the SSIM loss between the true and predicted spectrograms.
+  Parameters:
+  y_true (tf.Tensor): True spectrogram.
+  y_pred (tf.Tensor): Predicted spectrogram.
+  """
+  return 1 - tf.reduce_mean(tf.image.ssim(y_true, y_pred, max_val=1.0))
+
 class LukeNoiseReducer:
     def __init__(self):
         try:
             logger.info("Loading Luke model...")
-            self.model = tf.keras.models.load_model('modeldev_luke.h5', compile=False)
+            self.model = tf.keras.models.load_model('modeldev_luke.keras', compile=False)
             logger.info("Luke model loaded successfully")
             logger.info(f"Model input shape: {self.model.input_shape}")
             logger.info(f"Model output shape: {self.model.output_shape}")
@@ -61,36 +73,43 @@ class LukeNoiseReducer:
                 else:
                     audio = audio.squeeze()
                     
-            # Normalize audio
-            audio = audio / (np.max(np.abs(audio)) + 1e-8)
+            # constants
+            N_FFT = 2048
+            HOP_LENGTH = 512
+            WINDOW_DURATION = 1.02
+            MIN_VAL = -80
+            MAX_VAL = 0
+
+            # Get phase information for better post-processing
+            stft_result = librosa.stft(audio, n_fft=N_FFT, hop_length=HOP_LENGTH)
+            phase = np.angle(stft_result)
+            magnitude = np.abs(stft_result)
+
+            window_samples = int(sr * WINDOW_DURATION)
+            spectrograms = []
+
+            # divide audio into chunks of constant size and extract spectrograms
+            # from audio [shape: (128, 32)]
+            for start in range(0, len(audio), window_samples):
+                end = start + window_samples
+
+                window = audio[start:end]
+
+                if len(window) < window_samples:
+                    # pad with silence until the window is filled
+                    padding = window_samples - len(window)
+                    window = np.pad(window, (0, padding), mode='constant')
+
+                spec = librosa.feature.melspectrogram(y=window, sr=sr, n_fft=N_FFT, hop_length=HOP_LENGTH)
+                spec_db = librosa.power_to_db(spec, ref=np.max)
+                spectrograms.append(spec_db)
+
+            # Add single channel for grey-scale RGB
+            rgb_spectrograms = np.expand_dims(spectrograms, axis=-1)
+            # Normalize the spectrograms
+            normalized_spectrograms = (rgb_spectrograms - MIN_VAL) / (MAX_VAL - MIN_VAL)
             
-            # Compute STFT with explicit parameters
-            frequencies, times, Zxx = signal.stft(
-                audio,
-                fs=sr,
-                window=self.window,
-                nperseg=self.nperseg,
-                noverlap=self.noverlap,
-                boundary='zeros'  # Use zeros padding for boundary
-            )
-            
-            # Get magnitude spectrogram
-            spectrogram = np.abs(Zxx)
-            
-            # Store original shapes for later use
-            self.original_freq_len = spectrogram.shape[0]
-            self.original_time_len = spectrogram.shape[1]
-            
-            # Trim or pad to 128 frequency bins
-            if spectrogram.shape[0] > 128:
-                spectrogram = spectrogram[:128, :]
-                Zxx = Zxx[:128, :]
-            else:
-                pad_size = 128 - spectrogram.shape[0]
-                spectrogram = np.pad(spectrogram, ((0, pad_size), (0, 0)))
-                Zxx = np.pad(Zxx, ((0, pad_size), (0, 0)))
-            
-            return spectrogram, Zxx, frequencies, times
+            return normalized_spectrograms, phase, magnitude
             
         except Exception as e:
             logger.error(f"Error in prepare_spectrogram: {str(e)}")
@@ -98,73 +117,46 @@ class LukeNoiseReducer:
 
     def process_audio(self, audio, sample_rate):
         try:
-            # Handle input audio format
-            if isinstance(audio, torch.Tensor):
-                if len(audio.shape) == 3:
-                    audio = audio.squeeze(0)
-                if audio.shape[0] > 1:
-                    audio = torch.mean(audio, dim=0)
-                audio = audio.numpy()
+            # constants
+            TARGET_SAMPLE_RATE = 16000
+            N_FFT = 2048
+            HOP_LENGTH = 512
+            MIN_VAL = -80
+            MAX_VAL = 0
+
+            # Resample the audio so that it has the right sample rate
+            resampled_audio = audio
+            if sample_rate != TARGET_SAMPLE_RATE:
+                resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=TARGET_SAMPLE_RATE)
+                resampled_audio = resampler(audio)
+
+            # process and get the spectrograms
+            normalized_spectrograms, phase, magnitude = self.prepare_spectrogram(resampled_audio, TARGET_SAMPLE_RATE)
+
+            # Get predictions from model
+            predictions = self.model.predict(normalized_spectrograms, verbose=0)
+
+            # Unnormalize, undo single-channel RGB, combine the spectrograms together
+            unscaled_predictions = predictions * (MAX_VAL - MIN_VAL) + MIN_VAL
+            predicted_spectrograms = np.squeeze(unscaled_predictions, axis=-1)
+            combined_spectrogram = np.hstack(predicted_spectrograms)
             
-            # Resample if necessary
-            if sample_rate != 16000:
-                num_samples = int(len(audio) * 16000 / sample_rate)
-                audio = signal.resample(audio, num_samples)
-                sample_rate = 16000
+            # Inverse the spectrograms back into audio
+            mel_spectrogram = librosa.db_to_power(combined_spectrogram)
+            linear_spectrogram = librosa.feature.inverse.mel_to_stft(mel_spectrogram, sr=TARGET_SAMPLE_RATE, n_fft=N_FFT)
+            # Ensure linear spectrogram matches phase dimensions
+            min_time_frames = min(linear_spectrogram.shape[1], phase.shape[1])
+            linear_spectrogram = linear_spectrogram[:, :min_time_frames]
+            phase = phase[:, :min_time_frames]
+            # reconstruct stft using phase information
+            reconstructed_stft = linear_spectrogram * np.exp(1j * phase)
+
+            # Get the audio from the STFT
+            audio_signal = librosa.istft(reconstructed_stft, hop_length=HOP_LENGTH, n_fft=N_FFT)
+            audio_signal *= 2
             
-            # Prepare spectrogram
-            spectrogram, Zxx, frequencies, times = self.prepare_spectrogram(audio, sample_rate)
-            
-            # Process in chunks
-            num_frames = spectrogram.shape[1]
-            processed_frames = []
-            
-            for i in range(0, num_frames, 32):
-                chunk = spectrogram[:, i:i+32]
-                if chunk.shape[1] < 32:
-                    pad_size = 32 - chunk.shape[1]
-                    chunk = np.pad(chunk, ((0, 0), (0, pad_size)))
-                
-                model_input = chunk.reshape(1, 128, 32, 1)
-                batch_output = self.model.predict(model_input, verbose=0)
-                
-                valid_frames = min(32, num_frames - i)
-                if valid_frames < 32:
-                    batch_output = batch_output[:, :, :valid_frames, :]
-                
-                processed_frames.append(batch_output.squeeze())
-            
-            # Combine processed frames
-            processed_spectrogram = np.concatenate(processed_frames, axis=1)
-            
-            # Match dimensions with original
-            processed_spectrogram = processed_spectrogram[:, :self.original_time_len]
-            
-            # Reconstruct with original phase
-            phase = np.angle(Zxx[:128, :])
-            reconstructed_complex = processed_spectrogram * np.exp(1j * phase)
-            
-            # Add back original frequency dimensions if needed
-            if self.original_freq_len > 128:
-                pad_size = self.original_freq_len - 128
-                reconstructed_complex = np.pad(reconstructed_complex, ((0, pad_size), (0, 0)))
-            
-            # Inverse STFT with same parameters
-            _, reconstructed_audio = signal.istft(
-                reconstructed_complex,
-                fs=sample_rate,
-                window=self.window,
-                nperseg=self.nperseg,
-                noverlap=self.noverlap,
-                boundary='zeros'
-            )
-            
-            # Convert back to original sample rate if needed
-            if sample_rate != 16000:
-                num_samples = int(len(reconstructed_audio) * sample_rate / 16000)
-                reconstructed_audio = signal.resample(reconstructed_audio, num_samples)
-            
-            return torch.from_numpy(reconstructed_audio).float()
+            # Return the audio signal and new sample rate
+            return torch.from_numpy(audio_signal), TARGET_SAMPLE_RATE
             
         except Exception as e:
             logger.error(f"Error in process_audio: {str(e)}")
@@ -306,7 +298,23 @@ async def process_audio(
         
         # Process audio with selected model
         if model == "luke":
-            enhanced_audio = luke_reducer.process_audio(audio_tensor, sample_rate)
+            enhanced_audio, adjusted_sample_rate = luke_reducer.process_audio(audio_tensor, sample_rate)
+
+            # Ensure output is 2D (channels, samples) for saving
+            if len(enhanced_audio.shape) == 1:
+                enhanced_audio = enhanced_audio.unsqueeze(0)
+
+            # Save to buffer
+            buffer = BytesIO()
+            torchaudio.save(buffer, enhanced_audio, adjusted_sample_rate, format="wav")
+            buffer.seek(0)
+            
+            # Send file as response
+            return StreamingResponse(
+                buffer, 
+                media_type="audio/wav",
+                headers={"Content-Disposition": f"attachment; filename=processed_{file.filename.rsplit('.', 1)[0]}.wav"}
+            )
         elif model == "segan":
             enhanced_audio = segan_reducer.process_audio(audio_tensor, sample_rate)
         else:  # dns
