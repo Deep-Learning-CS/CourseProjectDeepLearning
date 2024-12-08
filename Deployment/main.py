@@ -8,7 +8,6 @@ from typing import Dict, Literal, Optional
 
 import librosa
 import numpy as np
-import tensorflow as tf
 import torch
 import torch.nn as nn
 import torchaudio
@@ -18,6 +17,9 @@ from fastapi.responses import JSONResponse
 from scipy import signal
 from segan import PretrainedSeganNoiseReducer
 from starlette.responses import StreamingResponse
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+import tensorflow as tf
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
