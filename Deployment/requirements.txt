@@ -1,10 +1,11 @@
-fastapi
-uvicorn
-python-multipart
-torch==2.1.0
-torchaudio==2.1.0
-tensorflow==2.17.0
-numpy
+﻿fastapi==0.103.2
+numpy==1.26.0
+torch==2.0.1
+torchaudio==2.0.2
+tensorflow-cpu==2.14.0  # Using CPU-only version
+librosa==0.10.1
 scipy==1.11.3
-python-jose==3.3.0
-librosa
+python-multipart
+uvicorn
+soundfile
+numba

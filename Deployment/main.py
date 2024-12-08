@@ -1,13 +1,17 @@
+import os
+
+os.environ['KMP_DUPLICATE_LIB_OK']='TRUE'
+
 import logging
 from io import BytesIO
 from typing import Dict, Literal, Optional
 
+import librosa
 import numpy as np
 import tensorflow as tf
 import torch
 import torch.nn as nn
 import torchaudio
-import librosa
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
