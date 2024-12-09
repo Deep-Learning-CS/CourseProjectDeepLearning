@@ -5,7 +5,7 @@ This project aims to reduce noise in audio signals using deep learning technique
 
 ## Link for Deployment
 
-[Noise Reduction using audio](https://course-project-deep-learning-git-main-sandys-projects-9dc0cf01.vercel.app/)
+[Noise Reduction for audio](https://course-project-deep-learning-git-main-sandys-projects-9dc0cf01.vercel.app/)
 
 ## Team Members
 
