@@ -23,6 +23,10 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements file and install Python dependencies
 COPY requirements.txt .
+COPY modeldev_luke.keras /app/modeldev_luke.keras
+
+RUN chmod 644 /app/modeldev_luke.keras
+
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application

@@ -64,7 +64,7 @@ class LukeNoiseReducer:
             self.window = signal.windows.hann(self.nperseg)
         except Exception as e:
             logger.error(f"Error loading Luke model: {str(e)}")
-            raise
+            raise e
 
     def prepare_spectrogram(self, audio, sr=16000):
         """Convert audio to spectrogram format"""
@@ -233,7 +233,6 @@ class NoiseReducer(nn.Module):
             logger.error(f"Error in DNS forward pass: {str(e)}")
             raise
 
-# Initialize models individually for better error handling
 dns_reducer = None
 luke_reducer = None
 segan_reducer = None
@@ -284,7 +283,7 @@ async def process_audio(
     if model == "luke" and luke_reducer is None:
         raise HTTPException(
             status_code=503,
-            detail="Luke model not available"
+            detail="Luke model not available, " + str(luke_reducer)
         )
     if model == "segan" and segan_reducer is None:
         raise HTTPException(

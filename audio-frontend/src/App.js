@@ -21,7 +21,7 @@ const AudioUpload = () => {
   const chunksRef = useRef([]);
   const timerIntervalRef = useRef(null);
 
-  const BACKEND_URL = "http://localhost:8081";
+  const BACKEND_URL = "https://audio-backend-63780294182.us-central1.run.app";
 
   // Cleanup effect
   useEffect(() => {
