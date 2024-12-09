@@ -1,7 +1,34 @@
-# Audio Noise Reduction Project
+# Noise Reduction using Deep Learning
 
 ## Overview
-This project implements a web-based audio noise reduction system that allows users to either upload audio files or record audio directly in the browser and process it using various noise reduction models. The system features a React-based frontend and a FastAPI backend, offering three different noise reduction models.
+This project aims to reduce noise in audio signals using deep learning techniques. We leverage state-of-the-art models to enhance the quality of audio by minimizing unwanted noise while preserving important sound details. The project demonstrates the power of deep learning in real-world audio signal processing.
+
+## Team Members
+
+### 1. **Ayush** - *Preprocessing*
+- Implemented audio data preprocessing pipeline
+- Developed signal processing utilities
+- Handled format conversions and standardization
+
+### 2. **Luke** - *Model Development & Training*
+- Designed and implemented the Luke model
+- Conducted model training and optimization
+- Specialized in spectrogram-based processing
+
+### 3. **Drashti** - *Model Development & Training*
+- Led SEGAN model implementation
+- Managed training infrastructure
+- Conducted performance optimization
+
+### 4. **Anayat** - *Model Evaluation*
+- Designed evaluation metrics
+- Conducted comparative analysis
+- Documented model performance
+
+### 5. **Sanidhaya** - *Model Deployment*
+- Implemented deployment infrastructure
+- Managed cloud resources
+- Handled CI/CD pipeline
 
 ## Live Demo
 The project is deployed and accessible at: [Audio Noise Reducer](https://course-project-deep-learning-git-main-sandys-projects-9dc0cf01.vercel.app/)
