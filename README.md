@@ -5,7 +5,7 @@ This project aims to reduce noise in audio signals using deep learning technique
 
 ## Team Members
 
-### 1. **Ayush** - *Preprocessing* 
+### 1. **Ayush** - *Preprocessing*
 - Implemented audio data preprocessing pipeline
 - Developed signal processing utilities
 - Handled format conversions and standardization
@@ -33,9 +33,10 @@ This project aims to reduce noise in audio signals using deep learning technique
 ## Live Demo
 The project is deployed and accessible at: [Audio Noise Reducer](https://course-project-deep-learning-git-main-sandys-projects-9dc0cf01.vercel.app/)
 
-⚠️ **Known Issues:**
+⚠️ **Known Issues and Important Warnings:**
 - The Luke model is currently not functioning in the deployment environment (works locally)
-- The SEGAN model's performance is not meeting expected quality standards
+- The SEGAN model produces extremely loud and piercing sounds - NOT recommended for users with hearing sensitivities
+- For the best experience, we recommend using the DNS model which is stable and performs well
 
 ## Features
 
@@ -51,20 +52,24 @@ The project is deployed and accessible at: [Audio Noise Reducer](https://course-
    - Automatic format conversion to WAV
 
 ### Noise Reduction Models
-1. **DNS Model (DNS48)**
+1. **DNS Model (DNS48)** [✅ Recommended]
    - Facebook's Denoiser model
    - Best performing model in deployment
    - Optimized for real-time processing
+   - Most stable and reliable option
 
 2. **Luke Model**
    - Custom implementation using TensorFlow
    - Currently functioning in localhost only
    - Uses spectrogram-based processing
+   - Not available in deployment due to memory constraints
 
-3. **SEGAN Model**
+3. **SEGAN Model** [⚠️ Use with Caution]
    - GAN-based noise reduction
-   - Currently showing suboptimal performance
-   - Implemented with PyTorch
+   - ⚠️ **WARNING: Produces extremely loud, piercing sounds**
+   - Not recommended for users with hearing sensitivities
+   - Currently showing major performance issues
+   - May cause discomfort - use at minimum volume first
 
 ## Technical Architecture
 
@@ -136,7 +141,7 @@ npm start
 1. **File Upload Method**
    - Click "Upload Audio"
    - Select WAV or FLAC file
-   - Choose noise reduction model
+   - Choose noise reduction model (DNS recommended)
    - Click "Upload and Process"
 
 2. **Recording Method**
@@ -150,6 +155,12 @@ npm start
    - Use download button for processed file
    - Compare original and processed audio
 
+⚠️ **Important Usage Note:**
+When testing any model, especially SEGAN, please:
+- Start with low volume
+- Test with a short audio clip first
+- Increase volume gradually after checking the output quality
+
 ## Current Limitations
 
 1. **Luke Model Deployment Issues**
@@ -158,9 +169,12 @@ npm start
    - Currently disabled in production
 
 2. **SEGAN Model Performance**
-   - Suboptimal noise reduction quality
+   - ⚠️ **SAFETY CONCERN**: Produces extremely loud, piercing sounds
+   - Not suitable for users with hearing sensitivities
+   - Significant audio quality issues
    - Higher processing latency
-   - Requires optimization
+   - Requires major optimization
+   - Output may be startling or uncomfortable
 
 3. **General Limitations**
    - Maximum file size restrictions
@@ -171,7 +185,7 @@ npm start
 
 1. **Model Enhancements**
    - Fix Luke model deployment issues
-   - Optimize SEGAN performance
+   - Address SEGAN audio quality problems
    - Implement model versioning
 
 2. **Feature Additions**
@@ -183,6 +197,7 @@ npm start
    - Progress indicators
    - Advanced audio visualization
    - Custom processing parameters
+   - Volume normalization for SEGAN output
 
 ## Contributing
 Contributions are welcome! Please submit issues and pull requests to the project repository.
